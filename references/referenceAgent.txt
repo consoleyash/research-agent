@@ -1,0 +1,27 @@
+import asyncio
+from claude_agent_sdk import query, ClaudeAgentOptions
+
+# Telemetry env vars are added in Part 2 - leave this dict here as the hook point
+OTEL_ENV = {}
+
+async def run_agent(topic: str, output_file: str = "output.md"):
+    options = ClaudeAgentOptions(
+        env=OTEL_ENV,
+        allowed_tools=["WebSearch", "Write"],
+        system_prompt=(
+            "You are a research agent. Search the web for the given topic, "
+            "synthesize the findings, and write a well-structured summary "
+            f"to a markdown file at {output_file}. Include sources."
+        ),
+    )
+
+    prompt = f"Research the topic '{topic}' using web search, then write your findings to {output_file}."
+
+    async for message in query(prompt=prompt, options=options):
+        # Print streamed messages for visibility during development
+        print(message)
+
+if __name__ == "__main__":
+    import sys
+    topic = sys.argv[1] if len(sys.argv) > 1 else "latest developments in AI agents"
+    asyncio.run(run_agent(topic))

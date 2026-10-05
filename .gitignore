@@ -1,0 +1,6 @@
+.venv/
+.env
+__pycache__/
+reports/*.md
+telemetry/*.jsonl
+docs

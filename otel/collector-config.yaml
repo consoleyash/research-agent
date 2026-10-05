@@ -1,0 +1,93 @@
+# OpenTelemetry Collector (contrib) - Phase 2b.
+# Receives OTLP from the research agent, writes every signal to disk (local
+# tee) and forwards it to Azure Application Insights, which routes it into the
+# AppTraces / AppMetrics / AppDependencies tables of the Log Analytics workspace.
+#
+# Requires APPLICATIONINSIGHTS_CONNECTION_STRING in the collector's environment.
+# run_collector.ps1 loads it from .env for you.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:4317
+      http:
+        endpoint: 127.0.0.1:4318
+
+processors:
+  # Small timeout so short agent runs flush promptly during local testing.
+  batch:
+    timeout: 2s
+    send_batch_size: 512
+
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Tag everything so these records are identifiable once they reach Azure.
+  # service.name becomes AppRoleName in Application Insights, which is how the
+  # workspace already separates claude-code / proptimise-backend / etc.
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: local
+        action: upsert
+      - key: telemetry.pipeline
+        value: agent-telemetry
+        action: upsert
+      # Org conventions. Dashboards filter on tenantId, so every record must
+      # carry it. Values come from .env via run_collector.ps1.
+      - key: tenantId
+        value: ${env:TELEMETRY_TENANT_ID}
+        action: upsert
+      - key: proptimise.collector.origin.component
+        value: ${env:TELEMETRY_ORIGIN_COMPONENT}
+        action: upsert
+      - key: proptimise.collector.origin.agent.id
+        value: ${env:TELEMETRY_AGENT_ID}
+        action: upsert
+      - key: agentId
+        value: ${env:TELEMETRY_AGENT_ID}
+        action: upsert
+
+exporters:
+  # Console stream. "normal" prints one line per record; "detailed" dumps every
+  # attribute and is far too noisy for continuous running.
+  debug:
+    verbosity: normal
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+  # Azure Application Insights -> AppTraces / AppMetrics / AppDependencies.
+  azuremonitor:
+    connection_string: ${env:APPLICATIONINSIGHTS_CONNECTION_STRING}
+    maxbatchsize: 1024
+    maxbatchinterval: 10s
+
+  # One JSON-lines file per signal, for offline inspection.
+  file/traces:
+    path: telemetry/traces.jsonl
+  file/metrics:
+    path: telemetry/metrics.jsonl
+  file/logs:
+    path: telemetry/logs.jsonl
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [debug, file/traces, azuremonitor]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [debug, file/metrics, azuremonitor]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [debug, file/logs, azuremonitor]
+
+  telemetry:
+    logs:
+      level: info

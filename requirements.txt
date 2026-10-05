@@ -1,0 +1,9 @@
+# Phase 1 - research agent
+claude-agent-sdk==0.2.157
+python-dotenv>=1.0
+
+# Phase 2a - local telemetry capture
+# The OpenTelemetry Collector is a standalone binary, not a pip package:
+#   otelcol-contrib v0.158.0 -> %USERPROFILE%\Downloads\otelcol-contrib.exe
+# The agent emits OTLP itself (via the Claude Code subprocess), so no
+# opentelemetry-sdk dependency is required on the Python side.
